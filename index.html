@@ -342,7 +342,7 @@
       <h3>Nota</h3>
       <p class="footer-note">
         La velocidad crítica se calcula con el ajuste lineal clásico distancia-tiempo.
-        Para las proyecciones se usa un ajuste de rendimiento más estable. Cuando una distancia coincide exactamente con una marca introducida por el usuario, se respeta ese valor en la gráfica y tabla por distancia.
+        Para las proyecciones se usa un modelo por tramos, que respeta las marcas introducidas e interpola entre ellas de forma más estable.
       </p>
     </div>
   </div>
@@ -502,34 +502,87 @@
       return { slope, intercept, r2 };
     }
 
-    function powerLawFit(points) {
-      const transformed = points.map(p => ({
-        x: Math.log(p.distance),
-        y: Math.log(p.time)
-      }));
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
 
-      const n = transformed.length;
-      const sumX = transformed.reduce((acc, p) => acc + p.x, 0);
-      const sumY = transformed.reduce((acc, p) => acc + p.y, 0);
-      const sumXY = transformed.reduce((acc, p) => acc + p.x * p.y, 0);
-      const sumX2 = transformed.reduce((acc, p) => acc + p.x * p.x, 0);
+    function createPerformanceModel(points) {
+      const sorted = [...points]
+        .sort((a, b) => a.distance - b.distance)
+        .filter((p, index, arr) => index === 0 || p.distance !== arr[index - 1].distance);
 
-      const denominator = n * sumX2 - sumX * sumX;
-      if (denominator === 0) return null;
+      if (sorted.length < 2) return null;
 
-      const b = (n * sumXY - sumX * sumY) / denominator;
-      const lnA = (sumY - b * sumX) / n;
-      const a = Math.exp(lnA);
+      return { points: sorted };
+    }
 
-      return { a, b };
+    function segmentExponent(p1, p2, capped = false) {
+      const exponent = Math.log(p2.time / p1.time) / Math.log(p2.distance / p1.distance);
+
+      if (!capped) return exponent;
+
+      return clamp(exponent, 1.03, 1.18);
     }
 
     function predictTimeFromDistance(distance, model) {
-      return model.a * Math.pow(distance, model.b);
+      const points = model.points;
+
+      for (const p of points) {
+        if (Math.abs(p.distance - distance) <= 0.5) {
+          return p.time;
+        }
+      }
+
+      if (distance < points[0].distance) {
+        const p1 = points[0];
+        const p2 = points[1];
+        const b = segmentExponent(p1, p2, true);
+        return p1.time * Math.pow(distance / p1.distance, b);
+      }
+
+      if (distance > points[points.length - 1].distance) {
+        const p1 = points[points.length - 2];
+        const p2 = points[points.length - 1];
+        const b = segmentExponent(p1, p2, true);
+        return p2.time * Math.pow(distance / p2.distance, b);
+      }
+
+      for (let i = 0; i < points.length - 1; i++) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+
+        if (distance >= p1.distance && distance <= p2.distance) {
+          const ratio =
+            (Math.log(distance) - Math.log(p1.distance)) /
+            (Math.log(p2.distance) - Math.log(p1.distance));
+
+          const logTime =
+            Math.log(p1.time) +
+            ratio * (Math.log(p2.time) - Math.log(p1.time));
+
+          return Math.exp(logTime);
+        }
+      }
+
+      return NaN;
     }
 
     function predictDistanceFromTime(time, model) {
-      return Math.pow(time / model.a, 1 / model.b);
+      let low = 100;
+      let high = 100000;
+
+      for (let i = 0; i < 80; i++) {
+        const mid = (low + high) / 2;
+        const predictedTime = predictTimeFromDistance(mid, model);
+
+        if (predictedTime < time) {
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+
+      return (low + high) / 2;
     }
 
     function getExactDistanceMatch(distance, userPoints, tolerance = 0.5) {
@@ -814,7 +867,7 @@
       }
 
       const csModel = linearRegression(rawPoints);
-      const performanceModel = powerLawFit(rawPoints);
+      const performanceModel = createPerformanceModel(rawPoints);
 
       if (!csModel || !performanceModel) {
         showWarning("No se pudieron calcular los ajustes con los datos introducidos.");
@@ -826,11 +879,6 @@
         return;
       }
 
-      if (!isFinite(performanceModel.a) || !isFinite(performanceModel.b) || performanceModel.a <= 0 || performanceModel.b <= 0) {
-        showWarning("No se pudo generar un modelo de predicción estable con los datos introducidos.");
-        return;
-      }
-
       const csKmh = csModel.slope * 3.6;
       const csPace = formatPaceFromSpeed(csModel.slope);
 
@@ -838,7 +886,7 @@
       document.getElementById("csPace").textContent = csPace;
 
       document.getElementById("fitInfo").textContent =
-        `Velocidad crítica calculada con ajuste lineal. Las distancias que coinciden exactamente con tus marcas se respetan en los resultados. R² del ajuste distancia-tiempo: ${csModel.r2.toFixed(4)}.`;
+        `Velocidad crítica calculada con ajuste lineal. Las estimaciones de ritmo usan un modelo por tramos basado en tus marcas. R² del ajuste distancia-tiempo: ${csModel.r2.toFixed(4)}.`;
 
       const distancePredictions = buildDistancePredictions(performanceModel, rawPoints);
       const timePredictions = buildTimePredictions(performanceModel);
@@ -847,8 +895,8 @@
       renderCharts(rawPoints, csModel, distancePredictions, timePredictions);
     }
 
-    let nextPlaceholderIndex = 0;
-    const newDistancePlaceholders = ["10000", "21097"];
+    let nextDefaultDistanceIndex = 0;
+    const newDefaultDistances = [10000, 21097];
 
     addPointBtn.addEventListener("click", () => {
       const currentRows = pointsContainer.querySelectorAll(".point-row").length;
@@ -860,14 +908,14 @@
 
       hideWarning();
 
-      const placeholder = newDistancePlaceholders[nextPlaceholderIndex % newDistancePlaceholders.length];
-      nextPlaceholderIndex++;
+      const defaultDistance = newDefaultDistances[nextDefaultDistanceIndex] || "";
+      nextDefaultDistanceIndex++;
 
-      createPointRow("", "", "", true, placeholder);
+      createPointRow(defaultDistance, "", "", true, defaultDistance || "10000");
     });
 
     loadExampleBtn.addEventListener("click", () => {
-      nextPlaceholderIndex = 0;
+      nextDefaultDistanceIndex = 0;
       initializePoints();
       hideWarning();
       calculate();
