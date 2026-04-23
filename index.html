@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calculadora de Velocidad Crítica</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --border: #dbe3ef;
+      --good: #065f46;
+      --warn: #92400e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    h1, h2, h3 {
+      margin-top: 0;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .grid-4 {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 15px;
+    }
+
+    button {
+      border: none;
+      background: var(--accent);
+      color: white;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 15px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button:hover {
+      opacity: 0.95;
+    }
+
+    .secondary {
+      background: #475569;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .result-box {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .result-title {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .result-value {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .warning {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 10px;
+      background: #fff7ed;
+      color: var(--warn);
+      border: 1px solid #fed7aa;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f8fafc;
+    }
+
+    canvas {
+      margin-top: 10px;
+      max-height: 380px;
+    }
+
+    .footer-note {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .point-row {
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>Calculadora de Velocidad Crítica</h1>
+      <p class="small">
+        Introduce entre 3 y 5 marcas del corredor. El sistema ajusta el modelo:
+        <strong>Distancia = CS × Tiempo + D′</strong>
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Datos del corredor</h2>
+      <div id="pointsContainer" class="grid" style="gap:12px;"></div>
+
+      <div class="actions">
+        <button id="addPointBtn" type="button">Añadir marca</button>
+        <button id="loadExampleBtn" type="button" class="secondary">Cargar ejemplo</button>
+        <button id="calculateBtn" type="button">Calcular</button>
+      </div>
+
+      <div id="warningBox" class="warning" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Resultados</h2>
+      <div class="grid grid-4">
+        <div class="result-box">
+          <div class="result-title">Velocidad crítica</div>
+          <div class="result-value" id="csMs">-</div>
+          <div class="small">m/s</div>
+        </div>
+        <div class="result-box">
+          <div class="result-title">Velocidad crítica</div>
+          <div class="result-value" id="csKmh">-</div>
+          <div class="small">km/h</div>
+        </div>
+        <div class="result-box">
+          <div class="result-title">Ritmo crítico</div>
+          <div class="result-value" id="csPace">-</div>
+          <div class="small">min/km</div>
+        </div>
+        <div class="result-box">
+          <div class="result-title">D′</div>
+          <div class="result-value" id="dPrime">-</div>
+          <div class="small">m</div>
+        </div>
+      </div>
+      <p class="small" id="fitInfo" style="margin-top:14px;">Sin cálculo todavía.</p>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h2>Gráfica distancia-tiempo</h2>
+        <canvas id="distanceTimeChart"></canvas>
+      </div>
+
+      <div class="card">
+        <h2>Gráfica ritmo por distancia</h2>
+        <canvas id="paceDistanceChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Gráfica ritmo por tiempo</h2>
+      <canvas id="paceTimeChart"></canvas>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h2>Tabla de ritmos por distancia</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Distancia</th>
+              <th>Tiempo estimado</th>
+              <th>Ritmo medio</th>
+            </tr>
+          </thead>
+          <tbody id="distanceTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Tabla de ritmos por tiempo</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Tiempo</th>
+              <th>Distancia estimada</th>
+              <th>Ritmo medio</th>
+            </tr>
+          </thead>
+          <tbody id="timeTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Nota</h3>
+      <p class="footer-note">
+        Esta herramienta estima el rendimiento a partir del modelo de velocidad crítica.
+        Funciona mejor con esfuerzos máximos o casi máximos, bien medidos, y dentro de un rango razonable.
+        No debe interpretarse como una predicción perfecta para todas las distancias.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const pointsContainer = document.getElementById("pointsContainer");
+    const addPointBtn = document.getElementById("addPointBtn");
+    const loadExampleBtn = document.getElementById("loadExampleBtn");
+    const calculateBtn = document.getElementById("calculateBtn");
+    const warningBox = document.getElementById("warningBox");
+
+    let distanceTimeChart = null;
+    let paceDistanceChart = null;
+    let paceTimeChart = null;
+
+    function createPointRow(distance = "", minutes = "", seconds = "") {
+      const row = document.createElement("div");
+      row.className = "point-row";
+
+      row.innerHTML = `
+        <div class="grid grid-2">
+          <div>
+            <label>Distancia (m)</label>
+            <input type="number" min="1" step="1" class="distance-input" value="${distance}" placeholder="Ej: 3000" />
+          </div>
+          <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+              <label>Minutos</label>
+              <input type="number" min="0" step="1" class="minutes-input" value="${minutes}" placeholder="Ej: 12" />
+            </div>
+            <div>
+              <label>Segundos</label>
+              <input type="number" min="0" max="59" step="1" class="seconds-input" value="${seconds}" placeholder="Ej: 30" />
+            </div>
+          </div>
+        </div>
+      `;
+
+      pointsContainer.appendChild(row);
+    }
+
+    function initializePoints() {
+      pointsContainer.innerHTML = "";
+      createPointRow(1600, 6, 0);
+      createPointRow(3000, 12, 0);
+      createPointRow(5000, 21, 0);
+    }
+
+    function showWarning(message) {
+      warningBox.style.display = "block";
+      warningBox.textContent = message;
+    }
+
+    function hideWarning() {
+      warningBox.style.display = "none";
+      warningBox.textContent = "";
+    }
+
+    function getInputData() {
+      const rows = Array.from(pointsContainer.querySelectorAll(".point-row"));
+
+      return rows.map((row) => {
+        const distance = parseFloat(row.querySelector(".distance-input").value);
+        const minutes = parseFloat(row.querySelector(".minutes-input").value) || 0;
+        const seconds = parseFloat(row.querySelector(".seconds-input").value) || 0;
+        const totalSeconds = minutes * 60 + seconds;
+
+        return { distance, time: totalSeconds };
+      }).filter(p => !isNaN(p.distance) && !isNaN(p.time) && p.distance > 0 && p.time > 0);
+    }
+
+    function linearRegression(points) {
+      const n = points.length;
+      const sumX = points.reduce((acc, p) => acc + p.time, 0);
+      const sumY = points.reduce((acc, p) => acc + p.distance, 0);
+      const sumXY = points.reduce((acc, p) => acc + p.time * p.distance, 0);
+      const sumX2 = points.reduce((acc, p) => acc + p.time * p.time, 0);
+
+      const denominator = n * sumX2 - sumX * sumX;
+      if (denominator === 0) return null;
+
+      const slope = (n * sumXY - sumX * sumY) / denominator;
+      const intercept = (sumY - slope * sumX) / n;
+
+      const meanY = sumY / n;
+      const ssTot = points.reduce((acc, p) => acc + Math.pow(p.distance - meanY, 2), 0);
+      const ssRes = points.reduce((acc, p) => {
+        const predicted = slope * p.time + intercept;
+        return acc + Math.pow(p.distance - predicted, 2);
+      }, 0);
+
+      const r2 = ssTot === 0 ? 1 : 1 - (ssRes / ssTot);
+
+      return { slope, intercept, r2 };
+    }
+
+    function formatPaceFromSpeed(speedMs) {
+      if (!isFinite(speedMs) || speedMs <= 0) return "-";
+      const secPerKm = 1000 / speedMs;
+      const minutes = Math.floor(secPerKm / 60);
+      const seconds = Math.round(secPerKm % 60);
+      const finalSeconds = seconds === 60 ? 0 : seconds;
+      const finalMinutes = seconds === 60 ? minutes + 1 : minutes;
+      return `${finalMinutes}:${String(finalSeconds).padStart(2, "0")}`;
+    }
+
+    function formatTime(seconds) {
+      if (!isFinite(seconds) || seconds <= 0) return "-";
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.round(seconds % 60);
+
+      if (h > 0) {
+        return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      }
+      return `${m}:${String(s).padStart(2, "0")}`;
+    }
+
+    function paceFromDistanceAndTime(distanceMeters, timeSeconds) {
+      if (distanceMeters <= 0 || timeSeconds <= 0) return "-";
+      const secPerKm = timeSeconds / (distanceMeters / 1000);
+      const min = Math.floor(secPerKm / 60);
+      const sec = Math.round(secPerKm % 60);
+      const finalSec = sec === 60 ? 0 : sec;
+      const finalMin = sec === 60 ? min + 1 : min;
+      return `${finalMin}:${String(finalSec).padStart(2, "0")}`;
+    }
+
+    function destroyCharts() {
+      if (distanceTimeChart) distanceTimeChart.destroy();
+      if (paceDistanceChart) paceDistanceChart.destroy();
+      if (paceTimeChart) paceTimeChart.destroy();
+    }
+
+    function buildDistancePredictions(cs, dPrime) {
+      const distances = [1000, 1500, 3000, 5000, 10000, 15000, 21097, 42195];
+      return distances
+        .filter(d => d > dPrime)
+        .map(distance => {
+          const time = (distance - dPrime) / cs;
+          return {
+            distance,
+            time,
+            pace: paceFromDistanceAndTime(distance, time)
+          };
+        });
+    }
+
+    function buildTimePredictions(cs, dPrime) {
+      const times = [180, 300, 600, 900, 1200, 1800, 2400, 3600, 5400];
+      return times.map(time => {
+        const distance = cs * time + dPrime;
+        return {
+          time,
+          distance,
+          pace: paceFromDistanceAndTime(distance, time)
+        };
+      });
+    }
+
+    function fillTables(distancePredictions, timePredictions) {
+      const distanceTableBody = document.getElementById("distanceTableBody");
+      const timeTableBody = document.getElementById("timeTableBody");
+
+      distanceTableBody.innerHTML = "";
+      timeTableBody.innerHTML = "";
+
+      distancePredictions.forEach(item => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${(item.distance / 1000).toFixed(item.distance >= 10000 ? 1 : 0)} km</td>
+          <td>${formatTime(item.time)}</td>
+          <td>${item.pace} /km</td>
+        `;
+        distanceTableBody.appendChild(tr);
+      });
+
+      timePredictions.forEach(item => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${formatTime(item.time)}</td>
+          <td>${(item.distance / 1000).toFixed(2)} km</td>
+          <td>${item.pace} /km</td>
+        `;
+        timeTableBody.appendChild(tr);
+      });
+    }
+
+    function renderCharts(rawPoints, cs, dPrime, distancePredictions, timePredictions) {
+      destroyCharts();
+
+      const sortedPoints = [...rawPoints].sort((a, b) => a.time - b.time);
+      const minTime = Math.min(...sortedPoints.map(p => p.time));
+      const maxTime = Math.max(...sortedPoints.map(p => p.time));
+
+      const linePoints = [];
+      const steps = 30;
+      const start = Math.max(1, minTime * 0.8);
+      const end = maxTime * 1.2;
+
+      for (let i = 0; i <= steps; i++) {
+        const t = start + ((end - start) * i / steps);
+        linePoints.push({ x: t, y: cs * t + dPrime });
+      }
+
+      distanceTimeChart = new Chart(document.getElementById("distanceTimeChart"), {
+        type: "scatter",
+        data: {
+          datasets: [
+            {
+              label: "Marcas introducidas",
+              data: sortedPoints.map(p => ({ x: p.time, y: p.distance })),
+              pointRadius: 6
+            },
+            {
+              label: "Ajuste lineal",
+              type: "line",
+              data: linePoints,
+              parsing: false,
+              pointRadius: 0,
+              tension: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: true }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: "Tiempo (s)" }
+            },
+            y: {
+              title: { display: true, text: "Distancia (m)" }
+            }
+          }
+        }
+      });
+
+      paceDistanceChart = new Chart(document.getElementById("paceDistanceChart"), {
+        type: "line",
+        data: {
+          labels: distancePredictions.map(p => `${(p.distance / 1000).toFixed(p.distance >= 10000 ? 1 : 0)} km`),
+          datasets: [{
+            label: "Ritmo medio estimado (seg/km)",
+            data: distancePredictions.map(p => p.time / (p.distance / 1000)),
+            tension: 0.2
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const sec = context.raw;
+                  const min = Math.floor(sec / 60);
+                  const s = Math.round(sec % 60);
+                  return ` ${min}:${String(s).padStart(2, "0")} /km`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: "Distancia" }
+            },
+            y: {
+              title: { display: true, text: "Ritmo (seg/km)" }
+            }
+          }
+        }
+      });
+
+      paceTimeChart = new Chart(document.getElementById("paceTimeChart"), {
+        type: "line",
+        data: {
+          labels: timePredictions.map(p => formatTime(p.time)),
+          datasets: [{
+            label: "Ritmo medio estimado (seg/km)",
+            data: timePredictions.map(p => p.time / (p.distance / 1000)),
+            tension: 0.2
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const sec = context.raw;
+                  const min = Math.floor(sec / 60);
+                  const s = Math.round(sec % 60);
+                  return ` ${min}:${String(s).padStart(2, "0")} /km`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              title: { display: true, text: "Tiempo de esfuerzo" }
+            },
+            y: {
+              title: { display: true, text: "Ritmo (seg/km)" }
+            }
+          }
+        }
+      });
+    }
+
+    function calculate() {
+      hideWarning();
+
+      const rawPoints = getInputData();
+
+      if (rawPoints.length < 3) {
+        showWarning("Necesitas al menos 3 marcas válidas para calcular la velocidad crítica.");
+        return;
+      }
+
+      const regression = linearRegression(rawPoints);
+
+      if (!regression) {
+        showWarning("No se pudo calcular la regresión lineal con los datos introducidos.");
+        return;
+      }
+
+      const cs = regression.slope;
+      const dPrime = regression.intercept;
+      const r2 = regression.r2;
+
+      if (!isFinite(cs) || cs <= 0) {
+        showWarning("La velocidad crítica calculada no es válida. Revisa los datos.");
+        return;
+      }
+
+      const csKmh = cs * 3.6;
+      const csPace = formatPaceFromSpeed(cs);
+
+      document.getElementById("csMs").textContent = cs.toFixed(3);
+      document.getElementById("csKmh").textContent = csKmh.toFixed(2);
+      document.getElementById("csPace").textContent = csPace;
+      document.getElementById("dPrime").textContent = dPrime.toFixed(1);
+
+      document.getElementById("fitInfo").textContent =
+        `Ajuste lineal completado. R² = ${r2.toFixed(4)}. ${
+          dPrime < 0
+            ? "Ojo: D′ ha salido negativo, lo que puede indicar datos poco consistentes."
+            : "Resultado coherente para el modelo."
+        }`;
+
+      const distancePredictions = buildDistancePredictions(cs, dPrime);
+      const timePredictions = buildTimePredictions(cs, dPrime);
+
+      fillTables(distancePredictions, timePredictions);
+      renderCharts(rawPoints, cs, dPrime, distancePredictions, timePredictions);
+    }
+
+    addPointBtn.addEventListener("click", () => {
+      const currentRows = pointsContainer.querySelectorAll(".point-row").length;
+      if (currentRows >= 5) {
+        showWarning("Por simplicidad, esta versión permite hasta 5 marcas.");
+        return;
+      }
+      hideWarning();
+      createPointRow();
+    });
+
+    loadExampleBtn.addEventListener("click", () => {
+      initializePoints();
+      hideWarning();
+    });
+
+    calculateBtn.addEventListener("click", calculate);
+
+    initializePoints();
+    calculate();
+  </script>
+</body>
+</html>
