@@ -20,9 +20,7 @@
       --warn-border: #fed7aa;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -37,13 +35,9 @@
       padding: 24px;
     }
 
-    h1, h2, h3 {
-      margin-top: 0;
-    }
+    h1, h2, h3 { margin-top: 0; }
 
-    p {
-      line-height: 1.55;
-    }
+    p { line-height: 1.55; }
 
     .card {
       background: var(--card);
@@ -130,13 +124,9 @@
       transition: 0.2s ease;
     }
 
-    button:hover {
-      opacity: 0.96;
-    }
+    button:hover { opacity: 0.96; }
 
-    .secondary {
-      background: var(--secondary);
-    }
+    .secondary { background: var(--secondary); }
 
     .danger {
       background: var(--danger);
@@ -221,9 +211,7 @@
       font-size: 14px;
     }
 
-    th {
-      background: #f8fafc;
-    }
+    th { background: #f8fafc; }
 
     .footer-note {
       font-size: 13px;
@@ -249,6 +237,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <div class="card">
@@ -283,9 +272,7 @@
     <div class="card">
       <div class="results-layout">
         <div class="results-left">
-          <div>
-            <h2 style="margin-bottom:12px;">Resultados</h2>
-          </div>
+          <h2 style="margin-bottom:12px;">Resultados</h2>
 
           <div class="result-box">
             <div class="result-title">Velocidad crítica</div>
@@ -355,7 +342,7 @@
       <h3>Nota</h3>
       <p class="footer-note">
         La velocidad crítica se calcula con el ajuste lineal clásico distancia-tiempo.
-        Para las proyecciones se usa un ajuste de rendimiento más estable, pero cuando una distancia o un tiempo coincide exactamente con una marca introducida por el usuario, se respeta ese valor.
+        Para las proyecciones se usa un ajuste de rendimiento más estable. Cuando una distancia coincide exactamente con una marca introducida por el usuario, se respeta ese valor en la gráfica y tabla por distancia.
       </p>
     </div>
   </div>
@@ -386,9 +373,11 @@
       const hours = Math.floor(rounded / 3600);
       const minutes = Math.floor((rounded % 3600) / 60);
       const seconds = rounded % 60;
+
       if (hours > 0) {
         return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
       }
+
       return `${minutes}:${String(seconds).padStart(2, "0")}`;
     }
 
@@ -547,10 +536,6 @@
       return userPoints.find(p => Math.abs(p.distance - distance) <= tolerance) || null;
     }
 
-    function getExactTimeMatch(time, userPoints, tolerance = 1) {
-      return userPoints.find(p => Math.abs(p.time - time) <= tolerance) || null;
-    }
-
     function buildDistancePredictions(model, userPoints) {
       const distances = [1000, 1500, 3000, 5000, 10000, 15000, 21097, 42195, 50000];
 
@@ -569,34 +554,33 @@
       });
     }
 
-    function buildTimePredictions(model, userPoints) {
+    function buildTimePredictions(model) {
       const times = [180, 300, 600, 900, 1200, 1800, 2400, 3600, 5400];
 
       return times.map(time => {
-        const exact = getExactTimeMatch(time, userPoints);
-        const distance = exact ? exact.distance : predictDistanceFromTime(time, model);
+        const distance = predictDistanceFromTime(time, model);
         const paceSec = paceSeconds(distance, time);
 
         return {
           time,
           distance,
           paceSec,
-          isExact: !!exact,
+          isExact: false,
           paceLabel: formatPaceFromSeconds(paceSec)
         };
       });
-    }
-
-    function destroyCharts() {
-      if (distanceTimeChart) distanceTimeChart.destroy();
-      if (paceDistanceChart) paceDistanceChart.destroy();
-      if (paceTimeChart) paceTimeChart.destroy();
     }
 
     function formatDistanceLabel(distance) {
       if (distance === 21097) return "21.1 km";
       if (distance === 42195) return "42.2 km";
       return `${(distance / 1000).toFixed(distance % 1000 === 0 ? 0 : 1)} km`;
+    }
+
+    function destroyCharts() {
+      if (distanceTimeChart) distanceTimeChart.destroy();
+      if (paceDistanceChart) paceDistanceChart.destroy();
+      if (paceTimeChart) paceTimeChart.destroy();
     }
 
     function fillTables(distancePredictions, timePredictions) {
@@ -698,18 +682,11 @@
           labels: distancePredictions.map(p => formatDistanceLabel(p.distance)),
           datasets: [{
             label: "Ritmo estimado",
-            data: distancePredictions.map(p => ({
-              x: formatDistanceLabel(p.distance),
-              y: p.paceSec,
-              distance: p.distance,
-              time: p.time,
-              paceSec: p.paceSec,
-              isExact: p.isExact
-            })),
-            parsing: false,
+            data: distancePredictions.map(p => p.paceSec),
+            customData: distancePredictions,
             tension: 0.2,
-            pointRadius: 4,
-            pointHoverRadius: 7
+            pointRadius: 5,
+            pointHoverRadius: 8
           }]
         },
         options: {
@@ -717,17 +694,17 @@
           maintainAspectRatio: false,
           interaction: {
             mode: "nearest",
-            intersect: true
+            intersect: false
           },
           plugins: {
             tooltip: {
               callbacks: {
                 title: function(items) {
-                  const item = items[0].raw;
-                  return `${formatDistanceLabel(item.distance)}`;
+                  const p = items[0].dataset.customData[items[0].dataIndex];
+                  return formatDistanceLabel(p.distance);
                 },
                 label: function(context) {
-                  const p = context.raw;
+                  const p = context.dataset.customData[context.dataIndex];
                   return [
                     `Ritmo: ${formatPaceFromSeconds(p.paceSec)} /km`,
                     `Tiempo: ${formatTimeCompact(p.time)}`,
@@ -760,18 +737,11 @@
           labels: timePredictions.map(p => formatTimeHMS(p.time)),
           datasets: [{
             label: "Ritmo estimado",
-            data: timePredictions.map(p => ({
-              x: formatTimeHMS(p.time),
-              y: p.paceSec,
-              time: p.time,
-              distance: p.distance,
-              paceSec: p.paceSec,
-              isExact: p.isExact
-            })),
-            parsing: false,
+            data: timePredictions.map(p => p.paceSec),
+            customData: timePredictions,
             tension: 0.2,
-            pointRadius: 4,
-            pointHoverRadius: 7
+            pointRadius: 5,
+            pointHoverRadius: 8
           }]
         },
         options: {
@@ -779,21 +749,21 @@
           maintainAspectRatio: false,
           interaction: {
             mode: "nearest",
-            intersect: true
+            intersect: false
           },
           plugins: {
             tooltip: {
               callbacks: {
                 title: function(items) {
-                  const item = items[0].raw;
-                  return `${formatTimeHMS(item.time)}`;
+                  const p = items[0].dataset.customData[items[0].dataIndex];
+                  return formatTimeHMS(p.time);
                 },
                 label: function(context) {
-                  const p = context.raw;
+                  const p = context.dataset.customData[context.dataIndex];
                   return [
                     `Ritmo: ${formatPaceFromSeconds(p.paceSec)} /km`,
                     `Distancia: ${(p.distance / 1000).toFixed(2)} km`,
-                    p.isExact ? "Marca introducida por el usuario" : "Estimación del modelo"
+                    "Estimación del modelo"
                   ];
                 }
               }
@@ -837,6 +807,7 @@
       for (let i = 1; i < sortedByDistance.length; i++) {
         const prevPace = paceSeconds(sortedByDistance[i - 1].distance, sortedByDistance[i - 1].time);
         const currentPace = paceSeconds(sortedByDistance[i].distance, sortedByDistance[i].time);
+
         if (currentPace < prevPace * 0.92) {
           showWarning("Hay marcas poco coherentes entre sí. Revisa los datos: alguna distancia larga sale demasiado rápida respecto a una más corta.");
         }
@@ -867,10 +838,10 @@
       document.getElementById("csPace").textContent = csPace;
 
       document.getElementById("fitInfo").textContent =
-        `Velocidad crítica calculada con ajuste lineal. Las distancias o tiempos que coinciden exactamente con tus marcas se respetan en los resultados. R² del ajuste distancia-tiempo: ${csModel.r2.toFixed(4)}.`;
+        `Velocidad crítica calculada con ajuste lineal. Las distancias que coinciden exactamente con tus marcas se respetan en los resultados. R² del ajuste distancia-tiempo: ${csModel.r2.toFixed(4)}.`;
 
       const distancePredictions = buildDistancePredictions(performanceModel, rawPoints);
-      const timePredictions = buildTimePredictions(performanceModel, rawPoints);
+      const timePredictions = buildTimePredictions(performanceModel);
 
       fillTables(distancePredictions, timePredictions);
       renderCharts(rawPoints, csModel, distancePredictions, timePredictions);
@@ -881,13 +852,17 @@
 
     addPointBtn.addEventListener("click", () => {
       const currentRows = pointsContainer.querySelectorAll(".point-row").length;
+
       if (currentRows >= 5) {
         showWarning("Por simplicidad, esta versión permite hasta 5 marcas.");
         return;
       }
+
       hideWarning();
+
       const placeholder = newDistancePlaceholders[nextPlaceholderIndex % newDistancePlaceholders.length];
       nextPlaceholderIndex++;
+
       createPointRow("", "", "", true, placeholder);
     });
 
