@@ -261,7 +261,7 @@
         <ul>
           <li>Usa esfuerzos <strong>máximos o casi máximos</strong>.</li>
           <li>Es mejor combinar marcas de diferentes duraciones.</li>
-          <li>Cuanto más consistentes sean los datos, más útil será la estimación.</li>
+          <li>Si introduces una marca exacta de una distancia propuesta, esa marca se respetará en el resultado.</li>
           <li>Las predicciones son orientativas y deben interpretarse con criterio.</li>
         </ul>
       </div>
@@ -355,7 +355,7 @@
       <h3>Nota</h3>
       <p class="footer-note">
         La velocidad crítica se calcula con el ajuste lineal clásico distancia-tiempo.
-        Para evitar extrapolaciones irreales en distancias largas, las estimaciones de ritmo por distancia y por tiempo se generan con un ajuste de rendimiento más estable a partir de las marcas introducidas.
+        Para las proyecciones se usa un ajuste de rendimiento más estable, pero cuando una distancia o un tiempo coincide exactamente con una marca introducida por el usuario, se respeta ese valor.
       </p>
     </div>
   </div>
@@ -428,7 +428,7 @@
       });
     }
 
-    function createPointRow(distance = "", minutes = "", seconds = "", removable = false) {
+    function createPointRow(distance = "", minutes = "", seconds = "", removable = false, distancePlaceholder = "10000") {
       const row = document.createElement("div");
       row.className = "point-row";
 
@@ -440,16 +440,16 @@
         <div class="grid grid-2">
           <div>
             <label>Distancia (m)</label>
-            <input type="number" min="1" step="1" class="distance-input" value="${distance}" placeholder="Ej: 3000" />
+            <input type="number" min="1" step="1" class="distance-input" value="${distance}" placeholder="${distancePlaceholder}" />
           </div>
           <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
             <div>
               <label>Minutos</label>
-              <input type="number" min="0" step="1" class="minutes-input" value="${minutes}" placeholder="Ej: 12" />
+              <input type="number" min="0" step="1" class="minutes-input" value="${minutes}" placeholder="Ej: 40" />
             </div>
             <div>
               <label>Segundos</label>
-              <input type="number" min="0" max="59" step="1" class="seconds-input" value="${seconds}" placeholder="Ej: 30" />
+              <input type="number" min="0" max="59" step="1" class="seconds-input" value="${seconds}" placeholder="Ej: 00" />
             </div>
           </div>
         </div>
@@ -469,9 +469,9 @@
 
     function initializePoints() {
       pointsContainer.innerHTML = "";
-      createPointRow(1600, 6, 0, false);
-      createPointRow(3000, 12, 0, false);
-      createPointRow(5000, 21, 0, false);
+      createPointRow(1000, 3, 30, false, "1000");
+      createPointRow(3000, 12, 0, false, "3000");
+      createPointRow(5000, 21, 0, false, "5000");
       updatePointNumbers();
     }
 
@@ -514,7 +514,6 @@
     }
 
     function powerLawFit(points) {
-      // Modelo tipo Riegel: t = a * d^b
       const transformed = points.map(p => ({
         x: Math.log(p.distance),
         y: Math.log(p.time)
@@ -544,29 +543,45 @@
       return Math.pow(time / model.a, 1 / model.b);
     }
 
-    function buildDistancePredictions(model) {
+    function getExactDistanceMatch(distance, userPoints, tolerance = 0.5) {
+      return userPoints.find(p => Math.abs(p.distance - distance) <= tolerance) || null;
+    }
+
+    function getExactTimeMatch(time, userPoints, tolerance = 1) {
+      return userPoints.find(p => Math.abs(p.time - time) <= tolerance) || null;
+    }
+
+    function buildDistancePredictions(model, userPoints) {
       const distances = [1000, 1500, 3000, 5000, 10000, 15000, 21097, 42195, 50000];
+
       return distances.map(distance => {
-        const time = predictTimeFromDistance(distance, model);
+        const exact = getExactDistanceMatch(distance, userPoints);
+        const time = exact ? exact.time : predictTimeFromDistance(distance, model);
         const paceSec = paceSeconds(distance, time);
+
         return {
           distance,
           time,
           paceSec,
+          isExact: !!exact,
           paceLabel: formatPaceFromSeconds(paceSec)
         };
       });
     }
 
-    function buildTimePredictions(model) {
+    function buildTimePredictions(model, userPoints) {
       const times = [180, 300, 600, 900, 1200, 1800, 2400, 3600, 5400];
+
       return times.map(time => {
-        const distance = predictDistanceFromTime(time, model);
+        const exact = getExactTimeMatch(time, userPoints);
+        const distance = exact ? exact.distance : predictDistanceFromTime(time, model);
         const paceSec = paceSeconds(distance, time);
+
         return {
           time,
           distance,
           paceSec,
+          isExact: !!exact,
           paceLabel: formatPaceFromSeconds(paceSec)
         };
       });
@@ -578,6 +593,12 @@
       if (paceTimeChart) paceTimeChart.destroy();
     }
 
+    function formatDistanceLabel(distance) {
+      if (distance === 21097) return "21.1 km";
+      if (distance === 42195) return "42.2 km";
+      return `${(distance / 1000).toFixed(distance % 1000 === 0 ? 0 : 1)} km`;
+    }
+
     function fillTables(distancePredictions, timePredictions) {
       const distanceTableBody = document.getElementById("distanceTableBody");
       const timeTableBody = document.getElementById("timeTableBody");
@@ -587,12 +608,8 @@
 
       distancePredictions.forEach(item => {
         const tr = document.createElement("tr");
-        const distanceLabel = item.distance >= 10000
-          ? `${(item.distance / 1000).toFixed(item.distance === 21097 || item.distance === 42195 ? 1 : 0)} km`
-          : `${(item.distance / 1000).toFixed(item.distance >= 1000 ? (item.distance % 1000 === 0 ? 0 : 1) : 0)} km`;
-
         tr.innerHTML = `
-          <td>${distanceLabel}</td>
+          <td>${formatDistanceLabel(item.distance)}</td>
           <td>${formatTimeCompact(item.time)}</td>
           <td>${item.paceLabel} /km</td>
         `;
@@ -678,25 +695,44 @@
       paceDistanceChart = new Chart(document.getElementById("paceDistanceChart"), {
         type: "line",
         data: {
-          labels: distancePredictions.map(p => {
-            if (p.distance === 21097) return "21.1 km";
-            if (p.distance === 42195) return "42.2 km";
-            return `${(p.distance / 1000).toFixed(p.distance % 1000 === 0 ? 0 : 1)} km`;
-          }),
+          labels: distancePredictions.map(p => formatDistanceLabel(p.distance)),
           datasets: [{
             label: "Ritmo estimado",
-            data: distancePredictions.map(p => p.paceSec),
-            tension: 0.2
+            data: distancePredictions.map(p => ({
+              x: formatDistanceLabel(p.distance),
+              y: p.paceSec,
+              distance: p.distance,
+              time: p.time,
+              paceSec: p.paceSec,
+              isExact: p.isExact
+            })),
+            parsing: false,
+            tension: 0.2,
+            pointRadius: 4,
+            pointHoverRadius: 7
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          interaction: {
+            mode: "nearest",
+            intersect: true
+          },
           plugins: {
             tooltip: {
               callbacks: {
+                title: function(items) {
+                  const item = items[0].raw;
+                  return `${formatDistanceLabel(item.distance)}`;
+                },
                 label: function(context) {
-                  return ` ${formatPaceFromSeconds(context.raw)} /km`;
+                  const p = context.raw;
+                  return [
+                    `Ritmo: ${formatPaceFromSeconds(p.paceSec)} /km`,
+                    `Tiempo: ${formatTimeCompact(p.time)}`,
+                    p.isExact ? "Marca introducida por el usuario" : "Estimación del modelo"
+                  ];
                 }
               }
             }
@@ -724,18 +760,41 @@
           labels: timePredictions.map(p => formatTimeHMS(p.time)),
           datasets: [{
             label: "Ritmo estimado",
-            data: timePredictions.map(p => p.paceSec),
-            tension: 0.2
+            data: timePredictions.map(p => ({
+              x: formatTimeHMS(p.time),
+              y: p.paceSec,
+              time: p.time,
+              distance: p.distance,
+              paceSec: p.paceSec,
+              isExact: p.isExact
+            })),
+            parsing: false,
+            tension: 0.2,
+            pointRadius: 4,
+            pointHoverRadius: 7
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          interaction: {
+            mode: "nearest",
+            intersect: true
+          },
           plugins: {
             tooltip: {
               callbacks: {
+                title: function(items) {
+                  const item = items[0].raw;
+                  return `${formatTimeHMS(item.time)}`;
+                },
                 label: function(context) {
-                  return ` ${formatPaceFromSeconds(context.raw)} /km`;
+                  const p = context.raw;
+                  return [
+                    `Ritmo: ${formatPaceFromSeconds(p.paceSec)} /km`,
+                    `Distancia: ${(p.distance / 1000).toFixed(2)} km`,
+                    p.isExact ? "Marca introducida por el usuario" : "Estimación del modelo"
+                  ];
                 }
               }
             }
@@ -808,14 +867,17 @@
       document.getElementById("csPace").textContent = csPace;
 
       document.getElementById("fitInfo").textContent =
-        `Velocidad crítica calculada con ajuste lineal. Predicciones de ritmo generadas con un ajuste de rendimiento estable. R² del ajuste distancia-tiempo: ${csModel.r2.toFixed(4)}.`;
+        `Velocidad crítica calculada con ajuste lineal. Las distancias o tiempos que coinciden exactamente con tus marcas se respetan en los resultados. R² del ajuste distancia-tiempo: ${csModel.r2.toFixed(4)}.`;
 
-      const distancePredictions = buildDistancePredictions(performanceModel);
-      const timePredictions = buildTimePredictions(performanceModel);
+      const distancePredictions = buildDistancePredictions(performanceModel, rawPoints);
+      const timePredictions = buildTimePredictions(performanceModel, rawPoints);
 
       fillTables(distancePredictions, timePredictions);
       renderCharts(rawPoints, csModel, distancePredictions, timePredictions);
     }
+
+    let nextPlaceholderIndex = 0;
+    const newDistancePlaceholders = ["10000", "21097"];
 
     addPointBtn.addEventListener("click", () => {
       const currentRows = pointsContainer.querySelectorAll(".point-row").length;
@@ -824,10 +886,13 @@
         return;
       }
       hideWarning();
-      createPointRow("", "", "", true);
+      const placeholder = newDistancePlaceholders[nextPlaceholderIndex % newDistancePlaceholders.length];
+      nextPlaceholderIndex++;
+      createPointRow("", "", "", true, placeholder);
     });
 
     loadExampleBtn.addEventListener("click", () => {
+      nextPlaceholderIndex = 0;
       initializePoints();
       hideWarning();
       calculate();
