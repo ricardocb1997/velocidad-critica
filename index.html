@@ -338,6 +338,34 @@
       </div>
     </div>
 
+    <div class="grid grid-2">
+      <div class="card">
+        <h2>Zonas de entrenamiento por velocidad crítica</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Zona</th>
+              <th>% VC</th>
+              <th>Velocidad</th>
+              <th>Ritmo</th>
+            </tr>
+          </thead>
+          <tbody id="zonesTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Perfil orientativo del corredor</h2>
+        <div class="result-box">
+          <div class="result-title">Perfil</div>
+          <div class="result-value" id="runnerProfile">-</div>
+        </div>
+        <p class="small" id="runnerProfileText" style="margin-top:14px;">
+          Sin cálculo todavía.
+        </p>
+      </div>
+    </div>
+
     <div class="card">
       <h3>Nota</h3>
       <p class="footer-note">
@@ -664,6 +692,92 @@
       });
     }
 
+    function buildTrainingZones(csMs) {
+      return [
+        { name: "Z1 Recuperación", min: 0.00, max: 0.80 },
+        { name: "Z2 Base aeróbica", min: 0.80, max: 0.90 },
+        { name: "Z3 Aeróbico intenso", min: 0.90, max: 1.00 },
+        { name: "Z4 Entorno crítico", min: 1.00, max: 1.05 },
+        { name: "Z5 Alta intensidad", min: 1.05, max: 1.15 }
+      ].map(zone => {
+        const minSpeed = csMs * zone.min;
+        const maxSpeed = csMs * zone.max;
+
+        return {
+          name: zone.name,
+          percent: zone.min === 0
+            ? `< ${Math.round(zone.max * 100)}%`
+            : `${Math.round(zone.min * 100)}–${Math.round(zone.max * 100)}%`,
+          speed: zone.min === 0
+            ? `< ${(maxSpeed * 3.6).toFixed(1)} km/h`
+            : `${(minSpeed * 3.6).toFixed(1)}–${(maxSpeed * 3.6).toFixed(1)} km/h`,
+          pace: zone.min === 0
+            ? `> ${formatPaceFromSpeed(maxSpeed)} /km`
+            : `${formatPaceFromSpeed(maxSpeed)}–${formatPaceFromSpeed(minSpeed)} /km`
+        };
+      });
+    }
+
+    function fillTrainingZones(csMs) {
+      const zonesTableBody = document.getElementById("zonesTableBody");
+      zonesTableBody.innerHTML = "";
+
+      const zones = buildTrainingZones(csMs);
+
+      zones.forEach(zone => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${zone.name}</td>
+          <td>${zone.percent}</td>
+          <td>${zone.speed}</td>
+          <td>${zone.pace}</td>
+        `;
+        zonesTableBody.appendChild(tr);
+      });
+    }
+
+    function calculateRunnerProfile(performanceModel) {
+      const points = performanceModel.points;
+
+      if (points.length < 2) {
+        return {
+          title: "-",
+          text: "No hay suficientes datos para estimar el perfil del corredor."
+        };
+      }
+
+      const first = points[0];
+      const last = points[points.length - 1];
+
+      const exponent = Math.log(last.time / first.time) / Math.log(last.distance / first.distance);
+
+      if (exponent <= 1.07) {
+        return {
+          title: "Perfil resistente",
+          text: "Pierde poco ritmo al aumentar la distancia. Esto sugiere buena resistencia específica y buena capacidad para sostener esfuerzos prolongados."
+        };
+      }
+
+      if (exponent <= 1.11) {
+        return {
+          title: "Perfil equilibrado",
+          text: "Muestra una relación bastante estable entre distancias cortas y largas. Es un perfil versátil, con buena combinación entre velocidad y resistencia."
+        };
+      }
+
+      return {
+        title: "Perfil más rápido que resistente",
+        text: "Rinde relativamente mejor en distancias cortas que en distancias largas. Puede beneficiarse de trabajar resistencia específica, umbral y capacidad de sostener ritmo."
+      };
+    }
+
+    function fillRunnerProfile(performanceModel) {
+      const profile = calculateRunnerProfile(performanceModel);
+
+      document.getElementById("runnerProfile").textContent = profile.title;
+      document.getElementById("runnerProfileText").textContent = profile.text;
+    }
+
     function renderCharts(rawPoints, csModel, distancePredictions, timePredictions) {
       destroyCharts();
 
@@ -892,6 +1006,8 @@
       const timePredictions = buildTimePredictions(performanceModel);
 
       fillTables(distancePredictions, timePredictions);
+      fillTrainingZones(csModel.slope);
+      fillRunnerProfile(performanceModel);
       renderCharts(rawPoints, csModel, distancePredictions, timePredictions);
     }
 
